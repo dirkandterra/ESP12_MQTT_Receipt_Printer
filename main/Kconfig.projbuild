@@ -1,0 +1,22 @@
+menu "Receipt Printer"
+
+    config PRINTER_UART_NUM
+        int "Printer UART port (0 or 1)"
+        default 1
+        help
+            UART1 TX is GPIO2 (output-only, no RX conflict).
+            UART0 TX is GPIO1 but conflicts with boot/debug output.
+
+    config PRINTER_TX_PIN
+        int "Printer TX GPIO"
+        default 2
+        help
+            GPIO2 is the TX pin for UART1 on the ESP-12 module.
+
+    config PRINTER_BAUD_RATE
+        int "Printer baud rate"
+        default 9600
+        help
+            Most 58mm ESC/POS printers default to 9600. Some support 19200 or 115200.
+
+endmenu
