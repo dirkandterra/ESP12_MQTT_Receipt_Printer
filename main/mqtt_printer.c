@@ -52,6 +52,11 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
     return ESP_OK;
 }
 
+void mqtt_publish(const char *topic, const char *payload)
+{
+    esp_mqtt_client_publish(s_client, topic, payload, 0, 0, 0);
+}
+
 void mqtt_printer_start(void)
 {
     esp_mqtt_client_config_t cfg = {

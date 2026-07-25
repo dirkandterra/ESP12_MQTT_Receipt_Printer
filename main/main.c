@@ -9,6 +9,7 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "tcpip_adapter.h"
+#include "driver/adc.h"
 
 #include "secret.h"
 #include "printer.h"
@@ -19,11 +20,14 @@ static const char *TAG = "receipt";
 const char *mqtt_topic = "ESP12_Receipt/print";
 
 static EventGroupHandle_t wifi_event_group;
+
 static int retry_count;
+static float batteryVoltage;
 static TimerHandle_t s_retry_timer;
 #define WIFI_CONNECTED_BIT  BIT0
 #define WIFI_MAX_RETRY      5
 #define WIFI_PAUSE_MS       (5 * 60 * 1000)
+#define VOLTAGE_DIVIDER_RATIO (7.48/(74.7+7.48))  // R1=75k, R2=7.5k
 
 /* ---------------------------------------------------------- wifi callbacks */
 
@@ -102,6 +106,24 @@ static void wifi_init_sta(void)
     ESP_LOGI(TAG, "WiFi connected to \"%s\"", WIFI_SSID);
 }
 
+/*----------------------------------------------------------- read battery level */
+static void battery_timer_cb(TimerHandle_t t)
+{
+    uint16_t raw;
+    if(adc_read(&raw) != ESP_OK) {
+        ESP_LOGE(TAG, "ADC read failed");
+        return;
+    }
+    batteryVoltage = (float)raw / 1023.0f / VOLTAGE_DIVIDER_RATIO;
+    int v_whole = (int)batteryVoltage;
+    int v_frac  = (int)((batteryVoltage - v_whole) * 100);
+    ESP_LOGI(TAG, "Battery voltage: %d.%02dV (raw=%u)", v_whole, v_frac, raw);
+
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%d.%02dV", v_whole, v_frac);
+    mqtt_publish("ESP12_Receipt/BattVoltage", buf);
+}
+
 /* ---------------------------------------------------------- entry point */
 
 void app_main(void)
@@ -109,6 +131,18 @@ void app_main(void)
     ESP_ERROR_CHECK(nvs_flash_init());
     printer_init();
     wifi_init_sta();
+
+    adc_config_t adc_cfg = {
+        .mode = ADC_READ_TOUT_MODE,
+        .clk_div = 8,
+    };
+    if(adc_init(&adc_cfg) != ESP_OK) {
+        ESP_LOGE(TAG, "ADC init failed");
+        return;
+    }
+    TimerHandle_t battery_timer = xTimerCreate("battery", pdMS_TO_TICKS(60 * 1000), pdTRUE, NULL, battery_timer_cb);
+    xTimerStart(battery_timer, 0);
+
     mqtt_printer_start();
     ESP_LOGI(TAG, "Receipt printer ready, listening on %s", mqtt_topic);
 }
